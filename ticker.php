@@ -2,7 +2,7 @@
 /**
  * Project: LMOnext
  * Filename: addon/ticker/ticker.php
- * Fileversion: 1.0.0
+ * Fileversion: 1.1.1
  *
  * PHP version 8.2
  *
@@ -15,25 +15,44 @@
  * addon/ticker/ticker.php des alten LMO4 - siehe dessen Doku-Auszug im
  * CHANGELOG.md dieses Addons). Zwei Einbindungsarten, wie beim alten LMO4:
  *
- * 1. Per include (bevorzugt, nur wenn PHP auf der Zielseite läuft):
+ * 1. Per include (bevorzugt, nur wenn PHP auf der Zielseite läuft) - echter
+ *    Dateisystemzugriff, läuft NICHT über den Webserver/addon-run.php:
  *      <?php
- *      $ticker_ligen = "1,5,12";   // Liga-IDs statt Dateinamen (LMOnext
- *                                  // arbeitet relational, nicht mit .l98-
- *                                  // Dateien wie das alte LMO4)
- *      $ticker_tickerart = "ergebnisse";  // optional, überschreibt die
+ *      $ticker_ligen = "1,5,12";           // Liga-IDs statt Dateinamen (LMOnext
+ *                                          // arbeitet relational, nicht mit .l98-
+ *                                          // Dateien wie das alte LMO4)
+ *
+ *      $ticker_tickerart = "ergebnisse";   // optional, überschreibt die
+ *                                          // Pro-Liga-Einstellung -
+ *                                          // "text"/"ergebnisse"/
+ *                                          // "ergebnisse_favorit"
+ *
+ *      $ticker_notizanzeigen = "1";        // optional, überschreibt die
  *                                          // Pro-Liga-Einstellung
+ *
+ *      $ticker_breite = "80";              // optional, Zeichen (0/leer = voll)
+ *
+ *      $ticker_geschwindigkeit = "900";    // optional, Zeichen/Minute
+ *
  *      include("PfadZumLMOnext/addon/ticker/ticker.php");
  *
  * 2. Per iframe (nur wenn 1. nicht funktioniert, z.B. keine PHP-Unterstützung
- *    auf der Zielseite):
- *      <iframe src="URLZumLMOnext/addon/ticker/ticker.php?ligen=1,5,12&tickerart=ergebnisse"
+ *    auf der Zielseite) - WICHTIG: Dateien unter addon/ sind per
+ *    addon/.htaccess vor direktem Web-Zugriff gesperrt (Sicherheitsmaßnahme
+ *    des Addon-Managers, siehe addon-run.php im Hauptprojekt-Root) - der
+ *    Aufruf muss deshalb über den zentralen Controller laufen, NICHT direkt
+ *    auf diese Datei zeigen:
+ *      <iframe src="URLZumLMOnext/addon-run.php?addon=ticker&file=ticker.php&ligen=1,5,12&tickerart=ergebnisse&breite=80&geschwindigkeit=900"
  *              frameborder="0" width="100%" height="40" scrolling="no"></iframe>
  *
  * Mehrere Ligen werden zu EINEM gemeinsamen Laufband zusammengefügt,
  * getrennt durch " +++ " (derselbe Trenner wie im alten LMO4). Jede Liga
  * wird einzeln über TickerRenderer::buildContent() aufbereitet - eine Liga
  * ohne anzeigbaren Inhalt (Ticker aus, oder leer) wird stillschweigend
- * übersprungen statt eine Lücke im Laufband zu hinterlassen.
+ * übersprungen statt eine Lücke im Laufband zu hinterlassen. Breite/
+ * Geschwindigkeit gelten für das GESAMTE zusammengefügte Laufband (nicht
+ * pro Liga), Ticker-Art/Notizanzeige-Überschreibung gilt für JEDE
+ * angegebene Liga gleichermaßen.
  *
  * WICHTIG (siehe alte LMO4-Doku): niemals per include() über eine URL
  * einbinden (include("http://.../ticker.php")) - nur über einen Dateipfad,
@@ -41,11 +60,17 @@
  */
 declare(strict_types = 1);
 
-// Per include gesetzte Variablen ($ticker_ligen usw.) haben Vorrang vor
-// GET-Parametern (iframe-Fall) - siehe Docblock oben. Wird VOR dem Bootstrap
-// geprüft, damit die Unterscheidung "include vs. direkter Request" nicht
-// versehentlich von etwas überschrieben wird, das der Bootstrap selbst setzt.
-$isIncludeMode = isset($ticker_ligen) || isset($ticker_tickerart) || isset($ticker_tickertext);
+// Unterscheidung "per addon-run.php aufgerufen (iframe-Fall)" vs. "per
+// include() aus einer anderen PHP-Datei eingebunden" - BUGFIX (gemeldet:
+// der Kommentar oben verwies fälschlich auf einen direkten URL-Aufruf
+// dieser Datei, der aber durch addon/.htaccess gesperrt ist; außerdem
+// bestimmte die vorherige Version diese Unterscheidung fälschlich über
+// isset($ticker_ligen) - ein include()-Aufruf OHNE vorher gesetzte
+// $ticker_*-Variable hätte das fälschlich als "iframe-Fall" behandelt).
+// addon-run.php definiert LMO_ADDON_STANDALONE_CALL, BEVOR es diese Datei
+// per require lädt (siehe dortiger Kommentar) - exakt dasselbe, bereits
+// etablierte Muster wie im mini-tabelle-Addon (lmo-minitab.php).
+$isIncludeMode = !defined('LMO_ADDON_STANDALONE_CALL');
 
 require_once __DIR__ . '/../../frontend/bootstrap.php';
 require_once __DIR__ . '/TickerRenderer.php';
@@ -56,9 +81,25 @@ if (function_exists('addonManager')) {
     \addonManager()->loadLanguages('ticker');
 }
 
-$ligenParam      = isset($ticker_ligen) ? (string)$ticker_ligen : (string)($_GET['ligen'] ?? '');
-$tickerartParam  = isset($ticker_tickerart) ? (string)$ticker_tickerart : (string)($_GET['tickerart'] ?? '');
-$freierTextParam = isset($ticker_tickertext) ? (string)$ticker_tickertext : (string)($_GET['tickertext'] ?? '');
+// Dieses Skript ist bewusst zum Einbetten via iframe auf fremden Websites
+// gedacht (siehe Docblock oben) - die von frontend/bootstrap.php gesetzten
+// Frame-Schutz-Header (X-Frame-Options/CSP frame-ancestors) werden hier
+// deshalb wieder entfernt, sonst würde jede Einbettung blockiert (dasselbe
+// bereits etablierte Vorgehen wie im mini-tabelle-Addon).
+if (!headers_sent()) {
+    header_remove('X-Frame-Options');
+    header_remove('Content-Security-Policy');
+}
+
+$ligenParam       = isset($ticker_ligen) ? (string)$ticker_ligen : (string)($_GET['ligen'] ?? '');
+$tickerartParam   = isset($ticker_tickerart) ? (string)$ticker_tickerart : (string)($_GET['tickerart'] ?? '');
+$freierTextParam  = isset($ticker_tickertext) ? (string)$ticker_tickertext : (string)($_GET['tickertext'] ?? '');
+$notizenParam     = isset($ticker_notizanzeigen) ? (string)$ticker_notizanzeigen : (string)($_GET['notizanzeigen'] ?? '');
+$breiteParam      = (int)(isset($ticker_breite) ? $ticker_breite : ($_GET['breite'] ?? 0));
+$geschwindigkeitParam = (int)(isset($ticker_geschwindigkeit) ? $ticker_geschwindigkeit : ($_GET['geschwindigkeit'] ?? 900));
+if ($geschwindigkeitParam < 10) {
+    $geschwindigkeitParam = 900; // ungültiger/fehlender Wert -> Standard
+}
 
 $ligaIds = array_values(array_filter(array_map(
     static fn(string $s) : int => (int)trim($s),
@@ -82,9 +123,12 @@ foreach ($ligaIds as $ligaId) {
     // tickerart-Parameter überschreibt die Pro-Liga-Einstellung, falls
     // gültig übergeben - ansonsten gilt, was in der Liga selbst konfiguriert
     // ist (inkl. "Ticker aus" -> diese Liga liefert dann keinen Beitrag).
-    if (in_array($tickerartParam, ['text', 'ergebnisse'], true)) {
+    if (in_array($tickerartParam, ['text', 'ergebnisse', 'ergebnisse_favorit'], true)) {
         $opts['tickerart'] = $tickerartParam;
         $opts['ticker'] = '1'; // explizit angeforderte Liga zählt als aktiviert
+    }
+    if ($notizenParam !== '') {
+        $opts['tickernotizen'] = $notizenParam === '1' ? '1' : '0';
     }
     if (($opts['ticker'] ?? '0') !== '1') {
         continue;
@@ -105,12 +149,14 @@ if ($gesamtText === '') {
     exit;
 }
 
-$html = '<div class="liga-ticker">'
-      . '<span class="liga-ticker-icon">📢</span>'
-      . '<div class="liga-ticker-viewport"><div class="liga-ticker-track">'
-      . '<span class="liga-ticker-text">' . $gesamtText . '</span>'
-      . '<span class="liga-ticker-text" aria-hidden="true">' . $gesamtText . '</span>'
-      . '</div></div></div>';
+// Eigener Style statt TickerRenderer::wrapMarkup()s Standard-Klassenfarben -
+// dieses Skript kennt keinen Core-Template-Kontext (helles/dunkles Theme
+// usw.), daher ein neutraler, heller Standardstil für die Einbettung auf
+// beliebigen Fremdseiten. Die Marquee-Mechanik selbst (Viewport/Track,
+// Zeichen-pro-Minute-Laufzeit, Breite) kommt unverändert aus
+// TickerRenderer::wrapMarkup(), damit sich an der eigentlichen Logik nichts
+// dupliziert.
+$html = TickerRenderer::wrapMarkup($gesamtText, $breiteParam, $geschwindigkeitParam, false);
 
 $style = '<style>
 body{margin:0;padding:0;font-family:sans-serif}
@@ -119,7 +165,7 @@ body{margin:0;padding:0;font-family:sans-serif}
 .liga-ticker-icon{flex:0 0 auto}
 .liga-ticker-viewport{flex:1;overflow:hidden;min-width:0}
 .liga-ticker-track{display:flex;white-space:nowrap;width:max-content;
-  animation:liga-ticker-scroll 30s linear infinite}
+  animation-name:liga-ticker-scroll;animation-timing-function:linear;animation-iteration-count:infinite}
 .liga-ticker-track:hover{animation-play-state:paused}
 .liga-ticker-text{white-space:nowrap;padding-right:60px}
 @keyframes liga-ticker-scroll{from{transform:translateX(0)}to{transform:translateX(-50%)}}
@@ -136,7 +182,7 @@ if ($isIncludeMode) {
     // allen gängigen Browsern).
     echo $style . $html;
 } else {
-    // Direkter HTTP-Request (typischerweise iframe) - vollständiges,
+    // Aufruf über addon-run.php (typischerweise iframe) - vollständiges,
     // eigenständiges Mini-Dokument, damit die Darstellung unabhängig vom
     // einbettenden Elterndokument korrekt ist.
     header('Content-Type: text/html; charset=UTF-8');
