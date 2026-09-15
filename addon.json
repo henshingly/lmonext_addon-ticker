@@ -1,10 +1,10 @@
 {
     "name": "ticker",
     "display_name": "Newsticker",
-    "version": "1.0.0",
+    "version": "1.1.1",
     "description": {
-        "de": "Newsticker: zeigt einen scrollenden Lauftext (Laufband) oberhalb der Tabs auf der Liga-Seite - entweder ein frei eingegebener Text oder die letzten Ergebnisse dieser Liga als durchlaufende Liste. Nach der Aktivierung erscheint in den Liga-Einstellungen (Tab \"Anzeigen/Darstellung\") der Bereich \"Ticker\", um ihn pro Liga ein-/auszuschalten und zu konfigurieren. Enthält außerdem einen eigenständigen, extern einbettbaren Ticker (addon/ticker/ticker.php) für den Einbau per iframe oder PHP-include auf beliebigen Seiten, mit Unterstützung für mehrere Ligen gleichzeitig - analog zum Newsticker-Addon des alten LMO4.",
-        "en": "Newsticker: shows a scrolling marquee above the tabs on the league page - either free text or the league's recent results as a running list. After activation, the league settings (\"Display\" tab) show a \"Ticker\" section to enable/configure it per league. Also includes a standalone, externally embeddable ticker (addon/ticker/ticker.php) for iframe or PHP-include embedding on any page, supporting multiple leagues at once - analogous to the old LMO4's newsticker addon."
+        "de": "Newsticker: zeigt einen scrollenden Lauftext (Laufband) oberhalb der Tabs auf der Liga-Seite - entweder ein frei eingegebener Text oder die letzten Ergebnisse dieser Liga als durchlaufende Liste. Nach der Aktivierung erscheint in den Liga-Einstellungen (Tab \"Anzeigen/Darstellung\") der Bereich \"Ticker\", um ihn pro Liga ein-/auszuschalten und zu konfigurieren. Enthält außerdem einen eigenständigen, extern einbettbaren Ticker (ticker.php, per PHP-include direkt oder per iframe über addon-run.php) für den Einbau auf beliebigen Seiten, mit Unterstützung für mehrere Ligen gleichzeitig - analog zum Newsticker-Addon des alten LMO4.",
+        "en": "Newsticker: shows a scrolling marquee above the tabs on the league page - either free text or the league's recent results as a running list. After activation, the league settings (\"Display\" tab) show a \"Ticker\" section to enable/configure it per league. Also includes a standalone, externally embeddable ticker (ticker.php, via direct PHP-include or via iframe through addon-run.php) for embedding on any page, supporting multiple leagues at once - analogous to the old LMO4's newsticker addon."
     },
     "author": "Dietmar Kersting, Torsten Hofmann",
     "homepage": "",
@@ -15,6 +15,9 @@
     "lang_dir": "lang/",
     "frontend_handlers": [
         "hooks_frontend.php"
+    ],
+    "standalone_entrypoints": [
+        "ticker.php"
     ],
     "hooks": [],
     "db_tables": [],
